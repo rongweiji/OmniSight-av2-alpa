@@ -1,15 +1,13 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { ArrowLeft, MapPin, Layers, Clock, Radio } from "lucide-react";
 
-import { api } from "@/lib/api";
-import { nearestTs } from "@/lib/utils";
 import { usePlayback } from "@/hooks/use-playback";
+import { usePreloader, PRELOAD_PLAY_THRESHOLD } from "@/hooks/use-preloader";
 import { TimelineBar } from "@/components/timeline-bar";
-import type { LidarFrame, Annotation, SceneInfo } from "@/lib/types";
+import type { SceneInfo } from "@/lib/types";
 
 const LidarViewer = dynamic(
   () => import("@/components/lidar-viewer").then((m) => m.LidarViewer),
@@ -51,37 +49,50 @@ interface Props { scene: SceneInfo }
 export function PlaybackClient({ scene }: Props) {
   const timestamps = scene.lidar_timestamps;
   const playback   = usePlayback({ totalFrames: timestamps.length });
+  const { progress, cache } = usePreloader(scene);
 
-  const [lidarFrame,   setLidarFrame]   = useState<LidarFrame | null>(null);
-  const [annotations,  setAnnotations]  = useState<Annotation[]>([]);
-  const [loadingLidar, setLoadingLidar] = useState(false);
+  const currentTs  = timestamps[playback.frameIndex] ?? 0;
+  const lidarFrame = cache.lidar.get(currentTs) ?? null;
+  const annotations = cache.annotations.get(currentTs) ?? [];
+  const cameras    = CAM_ORDER.filter((c) => scene.camera_timestamps[c]?.length);
 
-  const currentTs = timestamps[playback.frameIndex] ?? 0;
-
-  const fetchFrame = useCallback(async (ts: number) => {
-    if (!ts) return;
-    setLoadingLidar(true);
-    try {
-      const [frame, anns] = await Promise.all([
-        api.lidar(scene.log_id, ts),
-        api.annotations(scene.log_id, ts),
-      ]);
-      setLidarFrame(frame);
-      setAnnotations(anns.annotations);
-    } catch (e) {
-      console.error("Frame fetch:", e);
-    } finally {
-      setLoadingLidar(false);
-    }
-  }, [scene.log_id]);
-
-  useEffect(() => { fetchFrame(currentTs); }, [currentTs, fetchFrame]);
-
-  // Cameras available in this scene, ordered
-  const cameras = CAM_ORDER.filter((c) => scene.camera_timestamps[c]?.length);
+  const canPlay  = progress.readyFrames >= PRELOAD_PLAY_THRESHOLD || progress.done;
+  const loadPct  = progress.total > 0
+    ? Math.round((progress.loaded / progress.total) * 100)
+    : 0;
 
   return (
     <div className="h-screen flex flex-col bg-[#080c10] overflow-hidden">
+
+      {/* ── Loading overlay — shown until enough frames are buffered ─────────── */}
+      {!canPlay && (
+        <div className="absolute inset-0 z-50 bg-[#080c10] flex flex-col items-center justify-center gap-5">
+          <Radio className="w-9 h-9 text-primary animate-pulse" />
+
+          <div className="text-center">
+            <p className="text-white/80 text-sm font-medium">Loading scene data…</p>
+            <p className="text-white/40 text-xs mt-1">
+              {progress.readyFrames > 0
+                ? `${progress.readyFrames} frame${progress.readyFrames !== 1 ? "s" : ""} ready — starting soon`
+                : "Fetching LiDAR & camera data"}
+            </p>
+          </div>
+
+          {/* Progress bar */}
+          <div className="w-72">
+            <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-primary rounded-full transition-all duration-300 ease-out"
+                style={{ width: `${loadPct}%` }}
+              />
+            </div>
+            <div className="flex justify-between mt-1.5 text-[10px] text-white/30 font-mono">
+              <span>{progress.loaded} / {progress.total} items</span>
+              <span>{loadPct}%</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="shrink-0 h-11 border-b border-border bg-card/50 backdrop-blur-sm
@@ -102,15 +113,16 @@ export function PlaybackClient({ scene }: Props) {
           <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{scene.city_name}</span>
           <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{scene.duration_s}s</span>
           <span className="flex items-center gap-1"><Layers className="w-3 h-3" />{scene.n_annotations} obj</span>
-          {loadingLidar && (
-            <span className="flex items-center gap-1 text-primary animate-pulse">
-              <Radio className="w-3 h-3" /> loading
+          {/* Buffer progress shown while still loading in background */}
+          {!progress.done && canPlay && (
+            <span className="text-primary/60 text-[10px] font-mono tabular-nums">
+              {loadPct}% buffered
             </span>
           )}
         </div>
       </header>
 
-      {/* ── LiDAR 3D viewer — takes all remaining space ────────────────────── */}
+      {/* ── LiDAR 3D viewer ─────────────────────────────────────────────────── */}
       <div className="flex-1 min-h-0 relative">
         <LidarViewer frame={lidarFrame} annotations={annotations} />
 
@@ -138,8 +150,7 @@ export function PlaybackClient({ scene }: Props) {
       {cameras.length > 0 && (
         <div className="shrink-0 h-[130px] border-t border-border bg-black flex gap-0.5 px-0.5 py-0.5">
           {cameras.map((cam) => {
-            const ts  = nearestTs(scene.camera_timestamps[cam] ?? [], currentTs);
-            const url = api.cameraUrl(scene.log_id, cam, ts);
+            const blobUrl  = cache.cameras.get(currentTs)?.get(cam);
             const isCenter = cam === "ring_front_center";
 
             return (
@@ -148,13 +159,19 @@ export function PlaybackClient({ scene }: Props) {
                 className={`relative bg-[#0d1117] rounded overflow-hidden flex-1 min-w-0
                             ${isCenter ? "ring-1 ring-primary/40" : ""}`}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={url}
-                  alt={cam}
-                  className="w-full h-full object-cover"
-                  loading="lazy"
-                />
+                {blobUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={blobUrl}
+                    alt={cam}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  /* Placeholder while image is still being buffered */
+                  <div className="w-full h-full flex items-center justify-center">
+                    <Radio className="w-3 h-3 text-white/20 animate-pulse" />
+                  </div>
+                )}
                 <div className="absolute bottom-0 inset-x-0 px-1 py-0.5
                                 bg-gradient-to-t from-black/80 to-transparent
                                 text-[9px] text-white/60 text-center truncate">
