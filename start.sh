@@ -53,6 +53,8 @@ DGX_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
 # ── Stop any existing instances ───────────────────────────────────────────────
 [ -f "$API_PID_FILE" ]      && kill "$(cat $API_PID_FILE)"      2>/dev/null || true
 [ -f "$FRONTEND_PID_FILE" ] && kill "$(cat $FRONTEND_PID_FILE)" 2>/dev/null || true
+# Also kill any orphaned Next.js on the target port
+fuser -k "${FRONTEND_PORT}/tcp" 2>/dev/null || true
 sleep 1
 
 echo "============================================================"
@@ -97,31 +99,41 @@ echo "[2/3] Building frontend..."
 
 cd "${REPO_DIR}/frontend"
 
+API_URL="http://127.0.0.1:${API_PORT}"
+
 # Write .env.local so Next.js always has the API URL — more reliable than shell env prefix
-echo "API_URL=http://127.0.0.1:${API_PORT}" > .env.local
+cat > .env.local <<EOF
+API_URL=${API_URL}
+NEXT_PUBLIC_API_URL=${API_URL}
+EOF
 
 if [ ! -d "node_modules" ]; then
   echo "  -> Installing Node.js dependencies..."
   npm install
 fi
 
-npm run build
+API_URL="${API_URL}" npm run build
 echo "  -> Frontend built."
 
 # ── Step 3: Start frontend in background ─────────────────────────────────────
 echo ""
 echo "[3/3] Starting frontend..."
 
-npm start -- --port "${FRONTEND_PORT}" \
+API_URL="${API_URL}" NEXT_PUBLIC_API_URL="${API_URL}" npm start -- -p "${FRONTEND_PORT}" \
   > ~/omnisight-frontend.log 2>&1 &
 echo $! > "$FRONTEND_PID_FILE"
 echo "  -> Frontend running (PID $(cat $FRONTEND_PID_FILE))  log: ~/omnisight-frontend.log"
 
 # Wait until frontend responds
 for i in $(seq 1 20); do
-  curl -sf "http://localhost:${FRONTEND_PORT}" > /dev/null 2>&1 && break
+  curl -sf "http://127.0.0.1:${FRONTEND_PORT}" > /dev/null 2>&1 && break
   sleep 1
 done
+
+if ! curl -sf "http://127.0.0.1:${FRONTEND_PORT}" > /dev/null 2>&1; then
+  echo "  [ERROR] Frontend did not start. Check ~/omnisight-frontend.log"
+  exit 1
+fi
 
 # ── Done ─────────────────────────────────────────────────────────────────────
 echo ""
