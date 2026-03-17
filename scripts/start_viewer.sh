@@ -86,12 +86,30 @@ tmux new-session -d -s "${TMUX_API}" \
    2>&1 | tee ~/omnisight-api.log"
 
 echo "  -> API starting in tmux: ${TMUX_API}"
+echo "  -> Waiting for API..."
+for i in $(seq 1 20); do
+  curl -sf "http://127.0.0.1:${API_PORT}/health" > /dev/null 2>&1 && break
+  sleep 1
+done
+
+if ! curl -sf "http://127.0.0.1:${API_PORT}/health" > /dev/null 2>&1; then
+  echo "  [ERROR] API did not become ready. Check ~/omnisight-api.log"
+  exit 1
+fi
 
 # ── Build + start Next.js frontend ────────────────────────────────────────────
 echo ""
 echo "[2/2] Starting Next.js frontend (port ${FRONTEND_PORT})..."
 
 cd frontend
+
+API_URL="http://127.0.0.1:${API_PORT}"
+
+# Keep build-time and runtime API config aligned.
+cat > .env.local <<EOF
+API_URL=${API_URL}
+NEXT_PUBLIC_API_URL=${API_URL}
+EOF
 
 # Install Node deps if node_modules is missing
 if [ ! -d "node_modules" ]; then
@@ -102,7 +120,7 @@ fi
 # Build for production
 # API_URL is server-side only — Next.js proxy rewrites use it, browser never sees it
 echo "  -> Building Next.js app..."
-API_URL="http://localhost:${API_PORT}" npm run build
+API_URL="${API_URL}" npm run build
 
 cd ..
 
@@ -110,11 +128,22 @@ tmux new-session -d -s "${TMUX_FRONTEND}" \
   "source ${CONDA_BASE}/etc/profile.d/conda.sh && \
    conda activate ${ENV_NAME} && \
    cd $(pwd)/frontend && \
-   API_URL=http://localhost:${API_PORT} \
+   API_URL=${API_URL} \
+   NEXT_PUBLIC_API_URL=${API_URL} \
    npm start -- --port ${FRONTEND_PORT} \
    2>&1 | tee ~/omnisight-frontend.log"
 
 echo "  -> Frontend starting in tmux: ${TMUX_FRONTEND}"
+echo "  -> Waiting for frontend..."
+for i in $(seq 1 20); do
+  curl -sf "http://127.0.0.1:${FRONTEND_PORT}" > /dev/null 2>&1 && break
+  sleep 1
+done
+
+if ! curl -sf "http://127.0.0.1:${FRONTEND_PORT}" > /dev/null 2>&1; then
+  echo "  [ERROR] Frontend did not become ready. Check ~/omnisight-frontend.log"
+  exit 1
+fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 DGX_IP=$(hostname -I | awk '{print $1}')

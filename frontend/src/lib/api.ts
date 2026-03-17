@@ -1,12 +1,20 @@
 import type { SceneListResponse, SceneInfo, LidarFrame, AnnotationsResponse } from "./types";
 
+function configuredApiUrl(): string {
+  const raw =
+    process.env.API_URL ??
+    process.env.NEXT_PUBLIC_API_URL ??
+    "http://127.0.0.1:8080";
+  return raw.replace(/\/$/, "");
+}
+
 // Server components (SSR) cannot use relative URLs — Node.js has no origin.
 // Use the absolute backend URL server-side, relative URL client-side
 // (browser requests go through the Next.js rewrite proxy in next.config.mjs).
 function base(): string {
   if (typeof window === "undefined") {
     // Server-side: call the Python API directly
-    return process.env.API_URL ?? "http://127.0.0.1:8080";
+    return configuredApiUrl();
   }
   // Client-side: relative URL, proxied by Next.js rewrites
   return "";

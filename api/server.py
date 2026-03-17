@@ -58,8 +58,22 @@ CATEGORY_COLORS: dict[str, str] = {
 }
 
 
+def _validate_data_dir(data_dir: str) -> Path:
+    root = Path(data_dir)
+    if not root.exists():
+        raise RuntimeError(f"Data directory not found: {data_dir}")
+    if not root.is_dir():
+        raise RuntimeError(f"Data path is not a directory: {data_dir}")
+    if not os.access(root, os.R_OK | os.X_OK):
+        raise RuntimeError(f"Data directory is not readable: {data_dir}")
+    return root
+
+
 def _root() -> Path:
-    return Path(DATA_DIR)
+    try:
+        return _validate_data_dir(DATA_DIR)
+    except RuntimeError as exc:
+        raise HTTPException(500, str(exc)) from exc
 
 
 def _log(log_id: str) -> Path:
@@ -81,8 +95,6 @@ def _nearest_ts(timestamps: list[int], target: int) -> int:
 @app.get("/api/scenes")
 def list_scenes():
     root = _root()
-    if not root.exists():
-        raise HTTPException(404, f"Data directory not found: {DATA_DIR}")
     scenes = sorted(
         p.name for p in root.iterdir()
         if p.is_dir() and not p.name.startswith(".")
@@ -234,7 +246,8 @@ def get_annotations(log_id: str, timestamp_ns: int, window_ns: int = 55_000_000)
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "data_dir": DATA_DIR}
+    root = _root()
+    return {"status": "ok", "data_dir": DATA_DIR, "exists": True, "path": str(root)}
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
@@ -253,6 +266,10 @@ def main():
     args = parser.parse_args()
 
     DATA_DIR = args.data_dir
+    try:
+        _validate_data_dir(DATA_DIR)
+    except RuntimeError as exc:
+        raise SystemExit(f"[ERROR] {exc}") from exc
 
     print("=" * 55)
     print("  OmniSight Data API")

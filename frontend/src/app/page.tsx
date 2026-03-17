@@ -8,6 +8,10 @@ export default async function HomePage() {
   let scenes: string[] = [];
   let dataDir = "";
   let error = "";
+  const apiUrl =
+    process.env.API_URL ??
+    process.env.NEXT_PUBLIC_API_URL ??
+    "http://127.0.0.1:8080";
 
   try {
     const data = await api.scenes();
@@ -15,7 +19,7 @@ export default async function HomePage() {
     dataDir = data.data_dir;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    error = `API fetch failed — ${msg} (API_URL=${process.env.API_URL ?? "not set, default http://localhost:8080"})`;
+    error = `API fetch failed — ${msg} (effective API URL=${apiUrl})`;
   }
 
   return (

@@ -39,7 +39,8 @@ run_api() {
 run_frontend() {
   echo "Starting Next.js dev on :${FRONTEND_PORT}"
   cd "$(dirname "$0")/../frontend"
-  export NEXT_PUBLIC_API_URL="http://${DGX_IP}:${API_PORT}"
+  export API_URL="http://127.0.0.1:${API_PORT}"
+  export NEXT_PUBLIC_API_URL="${API_URL}"
   npm run dev -- --port "${FRONTEND_PORT}"
 }
 
