@@ -245,9 +245,12 @@ def run_inference(data: dict, model_path: str, output_path: str | None = None) -
     t_infer = time.perf_counter() - t0
     t_total = time.perf_counter() - t_start
 
-    # cot may be a numpy array of strings — extract the first element as str
+    # cot is a nested array — drill down until we get a plain string
     cot_raw = extra["cot"]
-    cot = str(cot_raw[0]) if hasattr(cot_raw, "__len__") else str(cot_raw)
+    cot = cot_raw
+    while not isinstance(cot, str) and hasattr(cot, "__len__"):
+        cot = cot[0]
+    cot = str(cot)
 
     # pred_xyz shape is [B, n_traj_group, num_traj, T, 3] — take first sample
     wp_np = pred_xyz.cpu().float().numpy()
