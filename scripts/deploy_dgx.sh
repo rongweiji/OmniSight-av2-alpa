@@ -111,37 +111,20 @@ if [ "${SKIP_DATA_DOWNLOAD}" = false ]; then
 
   mkdir -p "${AV2_DATA_DIR}"
 
-  # av2 provides a CLI to download specific splits
-  # We request just 1 log from the validation split to keep it small
-  python - <<PYEOF
-import subprocess, sys
-# Try using the av2 download utility
-try:
-    from av2.utils.remote_utils import download_s3_to_local
-    print("[av2] Note: av2 S3 download requires AWS credentials or public access.")
-    print("[av2] If download fails, manually place one AV2 log under:")
-    print(f"[av2]   ${AV2_DATA_DIR}/<log-id>/")
-    print("[av2] Or download via: https://www.argoverse.org/av2.html#download-link")
-except Exception as e:
-    print(f"[av2] Could not import av2 downloader: {e}")
+  # Download one AV2 scene via s5cmd (public S3 bucket, no credentials needed)
+  AV2_LOG_ID="0c6e62d7-bdfa-3061-8d3d-03b13aa21f68"
 
-# Fallback: guide the user
-print()
-print("  ┌─────────────────────────────────────────────────────────┐")
-print("  │  AV2 Data Download Options                              │")
-print("  │                                                         │")
-print("  │  Option A — s5cmd (fastest, requires AWS credentials):  │")
-print("  │    pip install s5cmd                                    │")
-print(f"  │    s5cmd cp 's3://argoai-argoverse2/sensor/val/*' {AV2_DATA_DIR!r:30} │")
-print("  │                                                         │")
-print("  │  Option B — Single scene via av2 CLI:                  │")
-print("  │    python -m av2.utils.download --split val \\           │")
-print("  │      --max-scenarios 1 --output-dir /raid/av2          │")
-print("  │                                                         │")
-print("  │  Option C — Manual: copy one log folder to             │")
-print(f"  │    {AV2_DATA_DIR}/<log-id>/                           │")
-print("  └─────────────────────────────────────────────────────────┘")
-PYEOF
+  if ! command -v s5cmd &>/dev/null; then
+    echo "  -> Installing s5cmd..."
+    pip install s5cmd -q
+  fi
+
+  echo "  -> Downloading scene: ${AV2_LOG_ID}"
+  s5cmd --no-sign-request cp \
+    "s3://argoai-argoverse2/sensor/val/${AV2_LOG_ID}/*" \
+    "${AV2_DATA_DIR}/${AV2_LOG_ID}/"
+
+  echo "  -> Scene saved to ${AV2_DATA_DIR}/${AV2_LOG_ID}/"
 
 else
   echo ""
