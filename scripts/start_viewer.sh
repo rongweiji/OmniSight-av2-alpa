@@ -78,7 +78,8 @@ echo ""
 echo "[1/2] Starting Data API (port ${API_PORT})..."
 
 tmux new-session -d -s "${TMUX_API}" \
-  "conda activate ${ENV_NAME} && \
+  "source ${CONDA_BASE}/etc/profile.d/conda.sh && \
+   conda activate ${ENV_NAME} && \
    AV2_DATA_DIR=${DATA_DIR} python -m api.server \
      --data-dir '${DATA_DIR}' \
      --port ${API_PORT} \
@@ -106,7 +107,9 @@ API_URL="http://localhost:${API_PORT}" npm run build
 cd ..
 
 tmux new-session -d -s "${TMUX_FRONTEND}" \
-  "cd $(pwd)/frontend && \
+  "source ${CONDA_BASE}/etc/profile.d/conda.sh && \
+   conda activate ${ENV_NAME} && \
+   cd $(pwd)/frontend && \
    API_URL=http://localhost:${API_PORT} \
    npm start -- --port ${FRONTEND_PORT} \
    2>&1 | tee ~/omnisight-frontend.log"
