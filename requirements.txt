@@ -1,0 +1,23 @@
+# AV2 dataset loader
+av2
+numpy
+pandas
+pyarrow          # required by av2 feather files
+
+# PyTorch (CUDA build installed separately on DGX via conda)
+torch
+torchvision
+
+# Web viewer
+fastapi
+uvicorn[standard]
+Pillow           # BEV image rendering
+
+# Visualization (optional, heavy — install manually if needed)
+# open3d
+rich
+
+# Alpamayo-R1-10B inference
+vllm
+openai
+huggingface_hub
