@@ -97,19 +97,21 @@ echo "[2/3] Building frontend..."
 
 cd "${REPO_DIR}/frontend"
 
+# Write .env.local so Next.js always has the API URL — more reliable than shell env prefix
+echo "API_URL=http://localhost:${API_PORT}" > .env.local
+
 if [ ! -d "node_modules" ]; then
   echo "  -> Installing Node.js dependencies..."
-  npm install --silent
+  npm install
 fi
 
-API_URL="http://localhost:${API_PORT}" npm run build
+npm run build
 echo "  -> Frontend built."
 
 # ── Step 3: Start frontend in background ─────────────────────────────────────
 echo ""
 echo "[3/3] Starting frontend..."
 
-API_URL="http://localhost:${API_PORT}" \
 npm start -- --port "${FRONTEND_PORT}" \
   > ~/omnisight-frontend.log 2>&1 &
 echo $! > "$FRONTEND_PID_FILE"
