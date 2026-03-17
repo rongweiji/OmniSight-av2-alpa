@@ -14,7 +14,8 @@ export default async function HomePage() {
     scenes = data.scenes;
     dataDir = data.data_dir;
   } catch (e) {
-    error = `Cannot reach API at ${process.env.API_URL ?? "http://localhost:8080"}`;
+    const msg = e instanceof Error ? e.message : String(e);
+    error = `API fetch failed — ${msg} (API_URL=${process.env.API_URL ?? "not set, default http://localhost:8080"})`;
   }
 
   return (
