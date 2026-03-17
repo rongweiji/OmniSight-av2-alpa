@@ -245,20 +245,23 @@ def run_inference(data: dict, model_path: str, output_path: str | None = None) -
     t_infer = time.perf_counter() - t0
     t_total = time.perf_counter() - t_start
 
-    cot       = extra["cot"][0]
-    waypoints = pred_xyz.cpu().float().numpy()[0, 0]  # [64, 3]
+    cot = extra["cot"][0]
+
+    # pred_xyz shape may be [B, n_traj, T, 3] — flatten to [T, 3]
+    wp_np = pred_xyz.cpu().float().numpy()
+    print(f"[model] pred_xyz shape: {wp_np.shape}")
+    waypoints = wp_np.reshape(-1, 3)  # always [T, 3] regardless of leading dims
 
     # ── Trajectory stats ──────────────────────────────────────────────────────
     import math
-    total_dist = sum(
+    steps = len(waypoints) - 1
+    seg_dists = [
         math.sqrt(sum((waypoints[i+1][k] - waypoints[i][k])**2 for k in range(3)))
-        for i in range(len(waypoints) - 1)
-    )
+        for i in range(steps)
+    ]
+    total_dist = sum(seg_dists)
     final_wp   = waypoints[-1]
-    peak_speed = max(
-        math.sqrt(sum((waypoints[i+1][k] - waypoints[i][k])**2 for k in range(3))) / 0.1
-        for i in range(len(waypoints) - 1)
-    )
+    peak_speed = max(seg_dists, default=0.0) / 0.1
 
     # ── Print results ─────────────────────────────────────────────────────────
     print("\n" + "="*60)
