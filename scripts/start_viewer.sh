@@ -41,8 +41,32 @@ echo "  API port      : ${API_PORT}"
 echo "  Frontend port : ${FRONTEND_PORT}"
 echo "============================================================"
 
-# Activate conda
-source "$(conda info --base)/etc/profile.d/conda.sh"
+# Activate conda — find miniconda/anaconda in common locations
+CONDA_BASE=""
+for candidate in \
+  "$HOME/miniconda3" \
+  "$HOME/anaconda3" \
+  "/opt/miniconda3" \
+  "/opt/anaconda3" \
+  "/usr/local/miniconda3" \
+  "/usr/local/anaconda3"; do
+  if [ -f "${candidate}/etc/profile.d/conda.sh" ]; then
+    CONDA_BASE="${candidate}"
+    break
+  fi
+done
+
+if [ -z "${CONDA_BASE}" ]; then
+  echo "[ERROR] Could not find conda installation."
+  echo "  Tried: ~/miniconda3, ~/anaconda3, /opt/miniconda3, /opt/anaconda3"
+  echo "  Set CONDA_BASE manually or run the API and frontend directly:"
+  echo "    python -m api.server --data-dir ${DATA_DIR} --port ${API_PORT}"
+  echo "    cd frontend && npm start -- --port ${FRONTEND_PORT}"
+  exit 1
+fi
+
+echo "  -> Conda base: ${CONDA_BASE}"
+source "${CONDA_BASE}/etc/profile.d/conda.sh"
 conda activate "${ENV_NAME}"
 
 # Kill existing sessions

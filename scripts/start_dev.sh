@@ -20,9 +20,19 @@ DGX_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
 
 MODE="${1:-all}"
 
+_activate_conda() {
+  for candidate in "$HOME/miniconda3" "$HOME/anaconda3" "/opt/miniconda3" "/opt/anaconda3"; do
+    if [ -f "${candidate}/etc/profile.d/conda.sh" ]; then
+      source "${candidate}/etc/profile.d/conda.sh"
+      conda activate omnisight 2>/dev/null || true
+      return
+    fi
+  done
+}
+
 run_api() {
   echo "Starting API on :${API_PORT} → data: ${DATA_DIR}"
-  conda activate omnisight 2>/dev/null || true
+  _activate_conda
   AV2_DATA_DIR="${DATA_DIR}" python -m api.server --data-dir "${DATA_DIR}" --port "${API_PORT}"
 }
 
