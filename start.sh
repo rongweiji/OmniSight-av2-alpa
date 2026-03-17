@@ -102,9 +102,7 @@ if [ ! -d "node_modules" ]; then
   npm install --silent
 fi
 
-API_URL="http://localhost:${API_PORT}" npm run build -- --silent 2>&1 \
-  | grep -E "Route|Error|warn|error|✓|✗" || true
-
+API_URL="http://localhost:${API_PORT}" npm run build
 echo "  -> Frontend built."
 
 # ── Step 3: Start frontend in background ─────────────────────────────────────
