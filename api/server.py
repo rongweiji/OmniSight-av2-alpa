@@ -202,15 +202,34 @@ def get_lidar(log_id: str, timestamp_ns: int, max_points: int = 25000):
 
 @app.get("/api/scenes/{log_id}/camera/{camera_name}/{timestamp_ns}")
 def get_camera(log_id: str, camera_name: str, timestamp_ns: int):
-    """Serve the exact camera frame for the given timestamp."""
+    """Serve the camera frame nearest to timestamp_ns.
+
+    AV2 timestamps exceed JavaScript's MAX_SAFE_INTEGER so the browser may
+    send a slightly rounded value.  We therefore fall back to the nearest
+    available file when an exact match is not found.
+    """
     base = _log(log_id) / "sensors" / "cameras" / camera_name
-    jpg = base / f"{timestamp_ns}.jpg"
-    png = base / f"{timestamp_ns}.png"
-    if jpg.exists():
-        return Response(jpg.read_bytes(), media_type="image/jpeg")
-    if png.exists():
-        return Response(png.read_bytes(), media_type="image/png")
-    raise HTTPException(404, f"Camera image not found: {camera_name}/{timestamp_ns}")
+    if not base.is_dir():
+        raise HTTPException(404, f"Camera not found: {camera_name}")
+
+    # Try exact match first (fast path)
+    for ext, mime in [(".jpg", "image/jpeg"), (".png", "image/png")]:
+        f = base / f"{timestamp_ns}{ext}"
+        if f.exists():
+            return Response(f.read_bytes(), media_type=mime)
+
+    # Exact match failed — find the nearest file on disk (handles JS float rounding)
+    jpg_files = sorted(base.glob("*.jpg"))
+    png_files = sorted(base.glob("*.png")) if not jpg_files else []
+    files = jpg_files or png_files
+    if not files:
+        raise HTTPException(404, f"No images in camera dir: {camera_name}")
+
+    ts_list = [int(f.stem) for f in files]
+    nearest = _nearest_ts(ts_list, timestamp_ns)
+    ext  = ".jpg" if jpg_files else ".png"
+    mime = "image/jpeg" if jpg_files else "image/png"
+    return Response((base / f"{nearest}{ext}").read_bytes(), media_type=mime)
 
 
 @app.get("/api/scenes/{log_id}/annotations/{timestamp_ns}")
