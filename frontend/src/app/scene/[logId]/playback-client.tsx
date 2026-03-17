@@ -248,7 +248,11 @@ export function PlaybackClient({ scene }: Props) {
 
           {/* LiDAR 3D viewer */}
           <div className="flex-1 min-h-0 relative">
-            <LidarViewer frame={lidarFrame} annotations={annotations} />
+            <LidarViewer
+          frame={lidarFrame}
+          annotations={annotations}
+          trajectory={activeResult?.waypoints_xyz}
+        />
 
             {/* Stats overlay */}
             <div className="absolute top-2 left-2 flex gap-2 pointer-events-none">
