@@ -1,4 +1,4 @@
-import type { SceneListResponse, SceneInfo, LidarFrame, AnnotationsResponse } from "./types";
+import type { SceneListResponse, SceneInfo, LidarFrame, AnnotationsResponse, InferenceResponse } from "./types";
 
 function configuredApiUrl(): string {
   const raw =
@@ -39,6 +39,9 @@ export const api = {
 
   annotations: (logId: string, ts: number): Promise<AnnotationsResponse> =>
     get(`/api/scenes/${logId}/annotations/${ts}`),
+
+  inference: (logId: string): Promise<InferenceResponse> =>
+    get(`/api/scenes/${logId}/inference`),
 
   /** Relative URL for <img src> — browser fetches via Next.js rewrite proxy */
   cameraUrl: (logId: string, camera: string, ts: number): string =>

@@ -7,7 +7,9 @@
       "Bash(chmod:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(find /Users/rongweiji/Project/OmniSight-av2-alpa -type f -name *download* -o -name *model* -o -name *setup*)"
     ]
   }
 }

@@ -45,3 +45,26 @@ export interface AnnotationsResponse {
   timestamp_ns: number;
   annotations: Annotation[];
 }
+
+export interface InferenceMetrics {
+  model_load_s: number;
+  inference_s: number;
+  total_s: number;
+  total_path_m: number;
+  peak_speed_ms: number;
+  gpu_mem_alloc_gb: number;
+  gpu_mem_reserved_gb: number;
+}
+
+export interface InferenceResult {
+  log_id: string;
+  current_ts: number;
+  cot: string;
+  waypoints_xyz: [number, number, number][];
+  metrics: InferenceMetrics;
+}
+
+export interface InferenceResponse {
+  log_id: string;
+  results: InferenceResult[];
+}

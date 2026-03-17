@@ -328,11 +328,20 @@ if __name__ == "__main__":
                         help="Scene log ID (default: first scene found)")
     parser.add_argument("--frame-idx",  type=int, default=20,
                         help="Which camera frame to use as 'now' (default: 20)")
-    parser.add_argument("--output",     default=str(Path.home() / "alpamayo_result.json"),
-                        help="Save JSON result to this path")
+    parser.add_argument("--output",     default=None,
+                        help="Save JSON result to this path (default: {data_dir}/{log_id}/inference/{ts}.json)")
     args = parser.parse_args()
 
     t0 = time.perf_counter()
     data = load_av2_for_alpamayo(args.data_dir, args.log_id, args.frame_idx)
     print(f"[av2]  Data loading: {time.perf_counter()-t0:.2f}s")
-    run_inference(data, args.model_path, args.output)
+
+    # Default output: save into the scene directory so the API can serve it
+    output = args.output
+    if output is None:
+        infer_dir = Path(args.data_dir) / data["log_id"] / "inference"
+        infer_dir.mkdir(parents=True, exist_ok=True)
+        output = str(infer_dir / f"{data['current_ts']}.json")
+        print(f"[av2]  Auto output path: {output}")
+
+    run_inference(data, args.model_path, output)

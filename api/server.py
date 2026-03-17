@@ -263,6 +263,27 @@ def get_annotations(log_id: str, timestamp_ns: int, window_ns: int = 55_000_000)
     return {"timestamp_ns": timestamp_ns, "annotations": result}
 
 
+@app.get("/api/scenes/{log_id}/inference")
+def get_inference(log_id: str):
+    """
+    Return all saved Alpamayo inference results for this scene,
+    sorted by timestamp. Results are written by av2_alpamayo_inference.py
+    into {data_dir}/{log_id}/inference/{timestamp_ns}.json.
+    """
+    infer_dir = _log(log_id) / "inference"
+    if not infer_dir.exists():
+        return {"log_id": log_id, "results": []}
+
+    results = []
+    for f in sorted(infer_dir.glob("*.json")):
+        try:
+            import json as _json
+            results.append(_json.loads(f.read_text()))
+        except Exception:
+            pass
+    return {"log_id": log_id, "results": results}
+
+
 @app.get("/health")
 def health():
     root = _root()

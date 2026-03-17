@@ -1,15 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { ArrowLeft, MapPin, Layers, Clock, Radio, Bug } from "lucide-react";
+import { ArrowLeft, MapPin, Layers, Clock, Radio, Bug, Brain, ChevronRight } from "lucide-react";
 
 import { usePlayback } from "@/hooks/use-playback";
 import { usePreloader, PRELOAD_PLAY_THRESHOLD } from "@/hooks/use-preloader";
 import { TimelineBar } from "@/components/timeline-bar";
 import { nearestTs } from "@/lib/utils";
-import type { SceneInfo } from "@/lib/types";
+import { api } from "@/lib/api";
+import type { SceneInfo, InferenceResult } from "@/lib/types";
 
 const LidarViewer = dynamic(
   () => import("@/components/lidar-viewer").then((m) => m.LidarViewer),
@@ -53,6 +54,9 @@ export function PlaybackClient({ scene }: Props) {
   const playback   = usePlayback({ totalFrames: timestamps.length });
   const { progress, cache } = usePreloader(scene);
   const [showDebug, setShowDebug] = useState(false);
+  const [showInference, setShowInference] = useState(true);
+  const [inferenceResults, setInferenceResults] = useState<InferenceResult[]>([]);
+  const activeResultRef = useRef<HTMLDivElement>(null);
 
   const currentTs  = timestamps[playback.frameIndex] ?? 0;
   const lidarFrame = cache.lidar.get(currentTs) ?? null;
@@ -63,6 +67,23 @@ export function PlaybackClient({ scene }: Props) {
   const loadPct  = progress.total > 0
     ? Math.round((progress.loaded / progress.total) * 100)
     : 0;
+
+  // Load inference results once
+  useEffect(() => {
+    api.inference(scene.log_id).then(r => setInferenceResults(r.results)).catch(() => {});
+  }, [scene.log_id]);
+
+  // Find the inference result nearest to current timestamp
+  const activeResult: InferenceResult | null = inferenceResults.length === 0 ? null : (() => {
+    const tsList = inferenceResults.map(r => r.current_ts);
+    const nearest = nearestTs(tsList, currentTs);
+    return inferenceResults.find(r => r.current_ts === nearest) ?? null;
+  })();
+
+  // Scroll active result into view when it changes
+  useEffect(() => {
+    activeResultRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [activeResult?.current_ts]);
 
   return (
     <div className="h-screen flex flex-col bg-[#080c10] overflow-hidden">
@@ -116,13 +137,25 @@ export function PlaybackClient({ scene }: Props) {
           <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{scene.city_name}</span>
           <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{scene.duration_s}s</span>
           <span className="flex items-center gap-1"><Layers className="w-3 h-3" />{scene.n_annotations} obj</span>
-          {/* Buffer progress shown while still loading in background */}
           {!progress.done && canPlay && (
             <span className="text-primary/60 text-[10px] font-mono tabular-nums">
               {loadPct}% buffered
             </span>
           )}
-          {/* Debug button — always visible in header */}
+          {/* Inference panel toggle */}
+          <button
+            onClick={() => setShowInference(v => !v)}
+            className={`flex items-center gap-1 px-2 py-1 rounded transition-colors text-xs
+              ${showInference ? "bg-violet-500/20 text-violet-400" : "text-white/30 hover:text-white/70"}`}
+            title="Toggle inference panel"
+          >
+            <Brain className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">AI</span>
+            {inferenceResults.length > 0 && (
+              <span className="text-[10px] font-mono">{inferenceResults.length}</span>
+            )}
+          </button>
+          {/* Debug button */}
           <button
             onClick={() => setShowDebug(d => !d)}
             className={`p-1.5 rounded transition-colors ${showDebug ? "bg-yellow-500/20 text-yellow-400" : "text-white/30 hover:text-white/70"}`}
@@ -133,7 +166,7 @@ export function PlaybackClient({ scene }: Props) {
         </div>
       </header>
 
-      {/* Debug panel — rendered at root level, always above overlay */}
+      {/* Debug panel */}
       {showDebug && (
         <div className="absolute top-11 right-0 z-[60] w-80 bg-black/95 border border-white/10 rounded-bl-lg p-3 text-[11px] font-mono text-white/70 space-y-2 max-h-[80vh] overflow-y-auto">
           <p className="text-white/90 font-bold text-xs">Preload diagnostics</p>
@@ -207,67 +240,152 @@ export function PlaybackClient({ scene }: Props) {
         </div>
       )}
 
-      {/* ── LiDAR 3D viewer ─────────────────────────────────────────────────── */}
-      <div className="flex-1 min-h-0 relative">
-        <LidarViewer frame={lidarFrame} annotations={annotations} />
+      {/* ── Main content: LiDAR + right panel ───────────────────────────────── */}
+      <div className="flex-1 min-h-0 flex overflow-hidden">
 
-        {/* Stats overlay */}
-        <div className="absolute top-2 left-2 flex gap-2 pointer-events-none">
-          {lidarFrame && (
-            <span className="bg-black/70 text-white/60 text-[10px] font-mono px-2 py-0.5 rounded">
-              {lidarFrame.n_points.toLocaleString()} pts
-            </span>
-          )}
-          {annotations.length > 0 && (
-            <span className="bg-black/70 text-yellow-400/70 text-[10px] font-mono px-2 py-0.5 rounded">
-              {annotations.length} boxes
-            </span>
-          )}
-        </div>
+        {/* Left: LiDAR + cameras */}
+        <div className="flex-1 min-w-0 flex flex-col">
 
-        {/* Controls hint */}
-        <div className="absolute bottom-2 right-2 text-[10px] text-white/30 pointer-events-none">
-          drag to orbit · scroll to zoom · right-drag to pan
-        </div>
+          {/* LiDAR 3D viewer */}
+          <div className="flex-1 min-h-0 relative">
+            <LidarViewer frame={lidarFrame} annotations={annotations} />
 
-      </div>
+            {/* Stats overlay */}
+            <div className="absolute top-2 left-2 flex gap-2 pointer-events-none">
+              {lidarFrame && (
+                <span className="bg-black/70 text-white/60 text-[10px] font-mono px-2 py-0.5 rounded">
+                  {lidarFrame.n_points.toLocaleString()} pts
+                </span>
+              )}
+              {annotations.length > 0 && (
+                <span className="bg-black/70 text-yellow-400/70 text-[10px] font-mono px-2 py-0.5 rounded">
+                  {annotations.length} boxes
+                </span>
+              )}
+            </div>
 
-      {/* ── Camera strip — all cameras in one row ──────────────────────────── */}
-      {cameras.length > 0 && (
-        <div className="shrink-0 h-[130px] border-t border-border bg-black flex gap-0.5 px-0.5 py-0.5">
-          {cameras.map((cam) => {
-            const blobUrl  = cache.cameras.get(currentTs)?.get(cam);
-            const isCenter = cam === "ring_front_center";
+            {/* Controls hint */}
+            <div className="absolute bottom-2 right-2 text-[10px] text-white/30 pointer-events-none">
+              drag to orbit · scroll to zoom · right-drag to pan
+            </div>
+          </div>
 
-            return (
-              <div
-                key={cam}
-                className={`relative bg-[#0d1117] rounded overflow-hidden flex-1 min-w-0
-                            ${isCenter ? "ring-1 ring-primary/40" : ""}`}
-              >
-                {blobUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={blobUrl}
-                    alt={cam}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  /* Placeholder while image is still being buffered */
-                  <div className="w-full h-full flex items-center justify-center">
-                    <Radio className="w-3 h-3 text-white/20 animate-pulse" />
+          {/* Camera strip */}
+          {cameras.length > 0 && (
+            <div className="shrink-0 h-[130px] border-t border-border bg-black flex gap-0.5 px-0.5 py-0.5">
+              {cameras.map((cam) => {
+                const blobUrl  = cache.cameras.get(currentTs)?.get(cam);
+                const isCenter = cam === "ring_front_center";
+
+                return (
+                  <div
+                    key={cam}
+                    className={`relative bg-[#0d1117] rounded overflow-hidden flex-1 min-w-0
+                                ${isCenter ? "ring-1 ring-primary/40" : ""}`}
+                  >
+                    {blobUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={blobUrl}
+                        alt={cam}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Radio className="w-3 h-3 text-white/20 animate-pulse" />
+                      </div>
+                    )}
+                    <div className="absolute bottom-0 inset-x-0 px-1 py-0.5
+                                    bg-gradient-to-t from-black/80 to-transparent
+                                    text-[9px] text-white/60 text-center truncate">
+                      {CAM_LABEL[cam] ?? cam}
+                    </div>
                   </div>
-                )}
-                <div className="absolute bottom-0 inset-x-0 px-1 py-0.5
-                                bg-gradient-to-t from-black/80 to-transparent
-                                text-[9px] text-white/60 text-center truncate">
-                  {CAM_LABEL[cam] ?? cam}
-                </div>
-              </div>
-            );
-          })}
+                );
+              })}
+            </div>
+          )}
         </div>
-      )}
+
+        {/* ── Right panel: Alpamayo inference results ──────────────────────── */}
+        {showInference && (
+          <div className="shrink-0 w-72 border-l border-border bg-[#0a0e14] flex flex-col">
+
+            {/* Panel header */}
+            <div className="shrink-0 px-3 py-2 border-b border-border flex items-center gap-2">
+              <Brain className="w-3.5 h-3.5 text-violet-400" />
+              <span className="text-xs font-medium text-white/80">Alpamayo Inference</span>
+              <span className="ml-auto text-[10px] text-white/30 font-mono">
+                {inferenceResults.length} result{inferenceResults.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+
+            {inferenceResults.length === 0 ? (
+              /* Empty state */
+              <div className="flex-1 flex flex-col items-center justify-center gap-3 p-4 text-center">
+                <Brain className="w-8 h-8 text-white/10" />
+                <p className="text-xs text-white/30">No inference results yet</p>
+                <p className="text-[10px] text-white/20 font-mono leading-relaxed">
+                  Run av2_alpamayo_inference.py<br/>to generate results
+                </p>
+              </div>
+            ) : (
+              /* Results list */
+              <div className="flex-1 overflow-y-auto space-y-0 py-1">
+                {inferenceResults.map((r) => {
+                  const isActive = activeResult?.current_ts === r.current_ts;
+                  const tsMs = Math.round(r.current_ts / 1e6);
+
+                  return (
+                    <div
+                      key={r.current_ts}
+                      ref={isActive ? activeResultRef : null}
+                      className={`mx-1.5 my-1 rounded-lg border transition-all duration-200
+                        ${isActive
+                          ? "border-violet-500/50 bg-violet-500/10"
+                          : "border-white/5 bg-white/[0.02] hover:bg-white/5"
+                        }`}
+                    >
+                      {/* Timestamp row */}
+                      <div className="flex items-center gap-1.5 px-2.5 pt-2 pb-1">
+                        {isActive && <ChevronRight className="w-3 h-3 text-violet-400 shrink-0" />}
+                        <span className={`text-[10px] font-mono tabular-nums ${isActive ? "text-violet-300" : "text-white/40"}`}>
+                          t={tsMs.toLocaleString()} ms
+                        </span>
+                        {isActive && (
+                          <span className="ml-auto text-[9px] bg-violet-500/30 text-violet-300 px-1.5 py-0.5 rounded-full">
+                            now
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Chain-of-Causation */}
+                      <div className="px-2.5 pb-1.5">
+                        <p className={`text-[10px] leading-relaxed ${isActive ? "text-white/80" : "text-white/40"}`}>
+                          {r.cot}
+                        </p>
+                      </div>
+
+                      {/* Trajectory stats */}
+                      {r.metrics && (
+                        <div className={`mx-2.5 mb-2 px-2 py-1.5 rounded bg-black/30 grid grid-cols-2 gap-x-3 gap-y-0.5
+                          text-[9px] font-mono ${isActive ? "text-white/60" : "text-white/25"}`}>
+                          <span>path</span>
+                          <span className={isActive ? "text-white/80" : ""}>{r.metrics.total_path_m.toFixed(1)} m</span>
+                          <span>speed</span>
+                          <span className={isActive ? "text-white/80" : ""}>{(r.metrics.peak_speed_ms * 3.6).toFixed(1)} km/h</span>
+                          <span>infer</span>
+                          <span className={isActive ? "text-white/80" : ""}>{r.metrics.inference_s.toFixed(2)} s</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* ── Timeline ───────────────────────────────────────────────────────── */}
       <div className="shrink-0">
