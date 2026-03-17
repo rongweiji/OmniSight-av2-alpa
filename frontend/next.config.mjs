@@ -1,13 +1,16 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  images: {
-    remotePatterns: [
-      { protocol: "http", hostname: "**" },
-      { protocol: "https", hostname: "**" },
-    ],
-  },
-  env: {
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080",
+  // Proxy all /api/* requests to the Python backend.
+  // This means the browser never needs to know the backend's IP —
+  // it just calls /api/... and Next.js forwards it server-side.
+  async rewrites() {
+    const apiUrl = process.env.API_URL ?? "http://localhost:8080";
+    return [
+      {
+        source: "/api/:path*",
+        destination: `${apiUrl}/api/:path*`,
+      },
+    ];
   },
 };
 

@@ -99,14 +99,15 @@ if [ ! -d "node_modules" ]; then
 fi
 
 # Build for production
+# API_URL is server-side only — Next.js proxy rewrites use it, browser never sees it
 echo "  -> Building Next.js app..."
-NEXT_PUBLIC_API_URL="http://$(hostname -I | awk '{print $1}'):${API_PORT}" npm run build
+API_URL="http://localhost:${API_PORT}" npm run build
 
 cd ..
 
 tmux new-session -d -s "${TMUX_FRONTEND}" \
   "cd $(pwd)/frontend && \
-   NEXT_PUBLIC_API_URL=http://$(hostname -I | awk '{print $1}'):${API_PORT} \
+   API_URL=http://localhost:${API_PORT} \
    npm start -- --port ${FRONTEND_PORT} \
    2>&1 | tee ~/omnisight-frontend.log"
 
