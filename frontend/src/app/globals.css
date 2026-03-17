@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222 47% 5%;
+    --foreground: 213 31% 91%;
+    --card: 222 47% 8%;
+    --card-foreground: 213 31% 91%;
+    --border: 216 34% 14%;
+    --muted: 223 47% 11%;
+    --muted-foreground: 215 20% 55%;
+    --primary: 210 100% 56%;
+    --primary-foreground: 222 47% 5%;
+    --accent: 216 34% 14%;
+    --accent-foreground: 210 40% 98%;
+    --radius: 0.5rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+/* Timeline scrubber custom styles */
+.timeline-thumb {
+  @apply w-4 h-4 rounded-full bg-primary border-2 border-background shadow-md cursor-pointer;
+}
+
+/* Camera image fade-in */
+.cam-img {
+  @apply transition-opacity duration-150;
+}
