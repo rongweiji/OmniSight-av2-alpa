@@ -67,7 +67,11 @@ echo ""
 echo "[1/3] Starting data API..."
 
 cd "${REPO_DIR}"
-AV2_DATA_DIR="${DATA_DIR}" python -m api.server \
+# Use the full conda env Python path — background processes can lose PATH
+PYTHON="${CONDA_BASE}/envs/${ENV_NAME}/bin/python"
+[ ! -f "$PYTHON" ] && PYTHON="$(which python)"  # fallback
+
+AV2_DATA_DIR="${DATA_DIR}" "${PYTHON}" -m api.server \
   --data-dir "${DATA_DIR}" \
   --port "${API_PORT}" \
   > ~/omnisight-api.log 2>&1 &
