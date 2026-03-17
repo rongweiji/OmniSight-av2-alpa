@@ -5,6 +5,7 @@ OmniSight loads [Argoverse 2](https://argoverse.github.io/user-guide/datasets/se
 ## Features
 
 - Load any AV2 scene (LiDAR sweeps, ring cameras, 3D object annotations)
+- **Web data viewer** — camera gallery, bird's-eye-view LiDAR, annotation stats
 - Four explanation tasks: **scene summary**, **object behavior**, **lidar analysis**, **custom Q&A**
 - Streaming and batch inference modes
 - One-command DGX deployment via `deploy_dgx.sh`
@@ -15,15 +16,16 @@ OmniSight loads [Argoverse 2](https://argoverse.github.io/user-guide/datasets/se
 ```
 OmniSight-av2-alpa/
 ├── load_scene.py            # AV2 scene loader → returns dict of sweeps/cameras/annotations
+├── viewer.py                # FastAPI web viewer — camera gallery + BEV LiDAR (port 7860)
 ├── alpamayo/
-│   ├── server.py            # Start vLLM inference server
+│   ├── server.py            # Start vLLM inference server (port 8000)
 │   ├── client.py            # AlpamayoClient — wraps vLLM OpenAI API
 │   ├── inference.py         # SceneInference — full pipeline + CLI
 │   └── prompts.py           # Prompt templates for each task
 ├── examples/
 │   └── explain_scene.py     # Run all 4 tasks on a scene
 ├── scripts/
-│   └── deploy_dgx.sh        # One-command DGX setup
+│   └── deploy_dgx.sh        # One-command DGX setup (env + model + data + both services)
 └── requirements.txt
 ```
 
@@ -32,7 +34,7 @@ OmniSight-av2-alpa/
 ### 1. Clone on DGX
 
 ```bash
-git clone https://github.com/your-org/OmniSight-av2-alpa.git
+git clone https://github.com/rongweiji/OmniSight-av2-alpa.git
 cd OmniSight-av2-alpa
 ```
 
@@ -132,14 +134,33 @@ python -m alpamayo.server --tensor-parallel 4
 bash scripts/deploy_dgx.sh --tensor-parallel 4
 ```
 
+## Web Data Viewer
+
+Preview loaded scenes in your browser — camera images, bird's-eye-view LiDAR, annotation stats.
+
+```bash
+# Start the viewer (runs on port 7860 by default)
+python viewer.py --data-dir /raid/av2/sensor/val --port 7860
+
+# On your laptop, SSH tunnel and open browser
+ssh -L 7860:localhost:7860 user@<dgx-ip>
+# → http://localhost:7860
+```
+
+Viewer endpoints:
+- `/` — list all scenes
+- `/scene/<log-id>` — camera gallery, BEV LiDAR, annotation table
+- `/scene/<log-id>/info` — JSON metadata
+- `/scene/<log-id>/lidar` — per-sweep JSON stats
+
 ## Access from your laptop (SSH port forward)
 
 ```bash
-# On your laptop — forward DGX port 8000 to localhost
-ssh -L 8000:localhost:8000 user@your-dgx-ip
+# Forward both ports in one command
+ssh -L 7860:localhost:7860 -L 8000:localhost:8000 user@<dgx-ip>
 
-# Then point the client to localhost
-inf = SceneInference(server_url="http://localhost:8000/v1")
+# Web viewer:   http://localhost:7860
+# Inference API: http://localhost:8000/v1/models
 ```
 
 ## Requirements
