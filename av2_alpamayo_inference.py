@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -187,10 +188,19 @@ def load_av2_for_alpamayo(
 # ── Inference ─────────────────────────────────────────────────────────────────
 
 def run_inference(data: dict, model_path: str, output_path: str | None = None) -> dict:
+    t_start = time.perf_counter()
+
     print(f"\n[model] Loading Alpamayo-R1 from {model_path} ...")
+    t0 = time.perf_counter()
     model = AlpamayoR1.from_pretrained(model_path, dtype=torch.bfloat16).to("cuda")
     model.eval()
-    print("[model] Model loaded on GPU.")
+    t_load = time.perf_counter() - t0
+    print(f"[model] Model loaded on GPU  ({t_load:.1f}s)")
+
+    # ── GPU memory after load ──────────────────────────────────────────────────
+    mem_alloc = torch.cuda.memory_allocated() / 1e9
+    mem_res   = torch.cuda.memory_reserved()  / 1e9
+    print(f"[gpu]   allocated={mem_alloc:.2f} GB  reserved={mem_res:.2f} GB")
 
     processor = helper.get_processor(model.tokenizer)
     messages  = helper.create_message(data["image_frames"])
@@ -211,7 +221,11 @@ def run_inference(data: dict, model_path: str, output_path: str | None = None) -
     }
     model_inputs = helper.to_device(model_inputs, "cuda")
 
+    # ── Warm-up sync so timing is accurate ────────────────────────────────────
+    torch.cuda.synchronize()
+
     print("[model] Running trajectory inference ...")
+    t0 = time.perf_counter()
     torch.cuda.manual_seed_all(42)
     with torch.autocast("cuda", dtype=torch.bfloat16):
         pred_xyz, pred_rot, extra = model.sample_trajectories_from_data_with_vlm_rollout(
@@ -222,9 +236,24 @@ def run_inference(data: dict, model_path: str, output_path: str | None = None) -
             max_generation_length=256,
             return_extra=True,
         )
+    torch.cuda.synchronize()
+    t_infer = time.perf_counter() - t0
+    t_total = time.perf_counter() - t_start
 
     cot       = extra["cot"][0]
     waypoints = pred_xyz.cpu().float().numpy()[0, 0]  # [64, 3]
+
+    # ── Trajectory stats ──────────────────────────────────────────────────────
+    import math
+    total_dist = sum(
+        math.sqrt(sum((waypoints[i+1][k] - waypoints[i][k])**2 for k in range(3)))
+        for i in range(len(waypoints) - 1)
+    )
+    final_wp   = waypoints[-1]
+    peak_speed = max(
+        math.sqrt(sum((waypoints[i+1][k] - waypoints[i][k])**2 for k in range(3))) / 0.1
+        for i in range(len(waypoints) - 1)
+    )
 
     # ── Print results ─────────────────────────────────────────────────────────
     print("\n" + "="*60)
@@ -234,19 +263,40 @@ def run_inference(data: dict, model_path: str, output_path: str | None = None) -
     print("  Chain-of-Causation reasoning:")
     print("  " + cot.replace("\n", "\n  "))
     print()
-    print(f"  Predicted trajectory — 64 waypoints over 6.4 s:")
+    print(f"  Predicted trajectory — {len(waypoints)} waypoints over {len(waypoints)*0.1:.1f}s:")
     for i in range(0, min(10, len(waypoints))):
         wp = waypoints[i]
         print(f"    t={i*0.1:.1f}s   x={wp[0]:+.3f}  y={wp[1]:+.3f}  z={wp[2]:+.3f}")
     if len(waypoints) > 10:
         print(f"    ... ({len(waypoints)-10} more waypoints)")
+    print()
+    print("  Trajectory summary:")
+    print(f"    Total path length : {total_dist:.2f} m")
+    print(f"    Final position    : x={final_wp[0]:+.2f}  y={final_wp[1]:+.2f}  z={final_wp[2]:+.2f} m")
+    print(f"    Peak speed        : {peak_speed:.2f} m/s  ({peak_speed*3.6:.1f} km/h)")
+    print()
+    print("  Performance:")
+    print(f"    Model load time   : {t_load:.2f} s")
+    print(f"    Inference time    : {t_infer:.2f} s")
+    print(f"    Total time        : {t_total:.2f} s")
+    print(f"    GPU mem allocated : {torch.cuda.memory_allocated()/1e9:.2f} GB")
+    print(f"    GPU mem reserved  : {torch.cuda.memory_reserved()/1e9:.2f} GB")
     print("="*60)
 
     result = {
-        "log_id":       data["log_id"],
-        "current_ts":   data["current_ts"],
-        "cot":          cot,
+        "log_id":        data["log_id"],
+        "current_ts":    data["current_ts"],
+        "cot":           cot,
         "waypoints_xyz": waypoints.tolist(),   # 64 × 3
+        "metrics": {
+            "model_load_s":      round(t_load, 3),
+            "inference_s":       round(t_infer, 3),
+            "total_s":           round(t_total, 3),
+            "total_path_m":      round(total_dist, 3),
+            "peak_speed_ms":     round(peak_speed, 3),
+            "gpu_mem_alloc_gb":  round(torch.cuda.memory_allocated()/1e9, 3),
+            "gpu_mem_reserved_gb": round(torch.cuda.memory_reserved()/1e9, 3),
+        },
     }
 
     if output_path:
@@ -272,5 +322,7 @@ if __name__ == "__main__":
                         help="Save JSON result to this path")
     args = parser.parse_args()
 
+    t0 = time.perf_counter()
     data = load_av2_for_alpamayo(args.data_dir, args.log_id, args.frame_idx)
+    print(f"[av2]  Data loading: {time.perf_counter()-t0:.2f}s")
     run_inference(data, args.model_path, args.output)
