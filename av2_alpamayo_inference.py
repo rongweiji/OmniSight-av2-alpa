@@ -167,12 +167,13 @@ def load_av2_for_alpamayo(
         ego_history_xyz_list.append(ref_R.T @ (xyz - ref_xyz))
         ego_history_rot_list.append(ref_R.T @ R)
 
+    # Model expects [B, n_traj_group, N, 3] and [B, n_traj_group, N, 3, 3]
     ego_history_xyz = torch.tensor(
         np.array(ego_history_xyz_list, dtype=np.float32)
-    ).unsqueeze(0)   # [1, 16, 3]
+    ).unsqueeze(0).unsqueeze(0)   # [1, 1, 16, 3]
     ego_history_rot = torch.tensor(
         np.array(ego_history_rot_list, dtype=np.float32)
-    ).unsqueeze(0)   # [1, 16, 3, 3]
+    ).unsqueeze(0).unsqueeze(0)   # [1, 1, 16, 3, 3]
 
     print(f"[av2] ego_history_xyz: {ego_history_xyz.shape}  ego_history_rot: {ego_history_rot.shape}")
 
