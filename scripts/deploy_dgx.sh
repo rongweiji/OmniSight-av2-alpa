@@ -121,7 +121,7 @@ if [ "${SKIP_DATA_DOWNLOAD}" = false ]; then
 
   echo "  -> Downloading scene: ${AV2_LOG_ID}"
   s5cmd --no-sign-request cp \
-    "s3://argoai-argoverse2/sensor/val/${AV2_LOG_ID}/*" \
+    "s3://argoverse/datasets/av2/sensor/val/${AV2_LOG_ID}/*" \
     "${AV2_DATA_DIR}/${AV2_LOG_ID}/"
 
   echo "  -> Scene saved to ${AV2_DATA_DIR}/${AV2_LOG_ID}/"
