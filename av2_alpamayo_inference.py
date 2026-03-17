@@ -203,7 +203,11 @@ def run_inference(data: dict, model_path: str, output_path: str | None = None) -
     print(f"[gpu]   allocated={mem_alloc:.2f} GB  reserved={mem_res:.2f} GB")
 
     processor = helper.get_processor(model.tokenizer)
-    messages  = helper.create_message(data["image_frames"])
+
+    # create_message expects Tensor [N, C, H, W], not a list of PIL images
+    import torchvision.transforms.functional as TF
+    frames_tensor = torch.stack([TF.to_tensor(img) for img in data["image_frames"]])
+    messages  = helper.create_message(frames_tensor)
 
     inputs = processor.apply_chat_template(
         messages,
