@@ -186,9 +186,66 @@ def load_av2_for_alpamayo(
     }
 
 
+# ── Scene description via VLM backbone ───────────────────────────────────────
+
+DESCRIBE_PROMPT = (
+    "You are an expert autonomous driving analyst. "
+    "These images are from a moving vehicle's surround-view cameras (rear-left, side-left, "
+    "front-left, front-center, front-right, side-right, rear-right). "
+    "Describe the driving scene in detail covering:\n"
+    "1. Road type and layout (highway, intersection, urban street, etc.)\n"
+    "2. Traffic density and nearby vehicles — position, speed, behaviour\n"
+    "3. Pedestrians or cyclists visible\n"
+    "4. Road markings, signs, traffic lights\n"
+    "5. Weather and lighting conditions\n"
+    "6. Any hazards, unusual events, or safety-relevant observations\n"
+    "Be specific and factual."
+)
+
+
+def describe_scene(model, processor, frames_tensor: "torch.Tensor") -> str:
+    """
+    Use the Qwen3-VL backbone (embedded in AlpamayoR1) to generate a rich
+    scene description from the current camera frames.
+    frames_tensor: Tensor [N, C, H, W]
+    """
+    messages = [
+        {
+            "role": "user",
+            "content": [{"type": "image", "image": f} for f in frames_tensor]
+            + [{"type": "text", "text": DESCRIBE_PROMPT}],
+        }
+    ]
+
+    inputs = processor.apply_chat_template(
+        messages,
+        tokenize=True,
+        add_generation_prompt=True,
+        return_dict=True,
+        return_tensors="pt",
+    )
+    input_ids = inputs["input_ids"].to("cuda")
+    # move all tensor values to cuda
+    inputs_cuda = {k: v.to("cuda") if hasattr(v, "to") else v for k, v in inputs.items()}
+
+    with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16):
+        out_ids = model.generate(
+            **inputs_cuda,
+            max_new_tokens=512,
+            do_sample=True,
+            temperature=0.7,
+            top_p=0.9,
+        )
+
+    # Decode only the newly generated tokens
+    new_tokens = out_ids[0][input_ids.shape[1]:]
+    return processor.tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
+
+
 # ── Inference ─────────────────────────────────────────────────────────────────
 
-def run_inference(data: dict, model_path: str, output_path: str | None = None) -> dict:
+def run_inference(data: dict, model_path: str, output_path: str | None = None,
+                  with_description: bool = False) -> dict:
     t_start = time.perf_counter()
 
     print(f"\n[model] Loading Alpamayo-R1 from {model_path} ...")
@@ -268,12 +325,24 @@ def run_inference(data: dict, model_path: str, output_path: str | None = None) -
     final_wp   = waypoints[-1]
     peak_speed = max(seg_dists, default=0.0) / 0.1
 
+    # ── Optional: rich scene description via VLM backbone ─────────────────────
+    scene_description = None
+    if with_description:
+        print("[model] Generating scene description (VLM pass) ...")
+        t0 = time.perf_counter()
+        scene_description = describe_scene(model, processor, frames_tensor)
+        print(f"[model] Description done ({time.perf_counter()-t0:.2f}s)")
+
     # ── Print results ─────────────────────────────────────────────────────────
     print("\n" + "="*60)
     print(f"  Scene  : {data['log_id']}")
     print(f"  Frame  : ts={data['current_ts']}")
     print()
-    print("  Chain-of-Causation reasoning:")
+    if scene_description:
+        print("  Scene description:")
+        print("  " + scene_description.replace("\n", "\n  "))
+        print()
+    print("  Chain-of-Causation (driving decision):")
     print("  " + cot.replace("\n", "\n  "))
     print()
     print(f"  Predicted trajectory — {len(waypoints)} waypoints over {len(waypoints)*0.1:.1f}s:")
@@ -297,10 +366,11 @@ def run_inference(data: dict, model_path: str, output_path: str | None = None) -
     print("="*60)
 
     result = {
-        "log_id":        data["log_id"],
-        "current_ts":    data["current_ts"],
-        "cot":           cot,
-        "waypoints_xyz": waypoints.tolist(),   # 64 × 3
+        "log_id":              data["log_id"],
+        "current_ts":          data["current_ts"],
+        "cot":                 cot,
+        "scene_description":   scene_description,
+        "waypoints_xyz":       waypoints.tolist(),   # 64 × 3
         "metrics": {
             "model_load_s":      round(t_load, 3),
             "inference_s":       round(t_infer, 3),
@@ -333,6 +403,8 @@ if __name__ == "__main__":
                         help="Which camera frame to use as 'now' (default: 20)")
     parser.add_argument("--output",     default=None,
                         help="Save JSON result to this path (default: {data_dir}/{log_id}/inference/{ts}.json)")
+    parser.add_argument("--describe",   action="store_true",
+                        help="Also generate a rich scene description using the VLM backbone (~5s extra)")
     args = parser.parse_args()
 
     t0 = time.perf_counter()
@@ -347,4 +419,4 @@ if __name__ == "__main__":
         output = str(infer_dir / f"{data['current_ts']}.json")
         print(f"[av2]  Auto output path: {output}")
 
-    run_inference(data, args.model_path, output)
+    run_inference(data, args.model_path, output, with_description=args.describe)

@@ -363,8 +363,25 @@ export function PlaybackClient({ scene }: Props) {
                         )}
                       </div>
 
+                      {/* Scene description (rich VLM output, if available) */}
+                      {r.scene_description && (
+                        <div className="px-2.5 pb-1">
+                          <p className={`text-[9px] font-medium uppercase tracking-wide mb-0.5
+                            ${isActive ? "text-violet-400/70" : "text-white/20"}`}>
+                            Scene
+                          </p>
+                          <p className={`text-[10px] leading-relaxed ${isActive ? "text-white/75" : "text-white/35"}`}>
+                            {r.scene_description}
+                          </p>
+                        </div>
+                      )}
+
                       {/* Chain-of-Causation */}
                       <div className="px-2.5 pb-1.5">
+                        <p className={`text-[9px] font-medium uppercase tracking-wide mb-0.5
+                          ${isActive ? "text-violet-400/70" : "text-white/20"}`}>
+                          Decision
+                        </p>
                         <p className={`text-[10px] leading-relaxed ${isActive ? "text-white/80" : "text-white/40"}`}>
                           {r.cot}
                         </p>

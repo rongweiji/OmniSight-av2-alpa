@@ -60,6 +60,7 @@ export interface InferenceResult {
   log_id: string;
   current_ts: number;
   cot: string;
+  scene_description?: string | null;
   waypoints_xyz: [number, number, number][];
   metrics: InferenceMetrics;
 }
