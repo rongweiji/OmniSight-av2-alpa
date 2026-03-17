@@ -14,7 +14,7 @@ export default async function HomePage() {
     scenes = data.scenes;
     dataDir = data.data_dir;
   } catch (e) {
-    error = `Cannot reach API at ${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"}`;
+    error = `Cannot reach API at ${process.env.API_URL ?? "http://localhost:8080"}`;
   }
 
   return (
