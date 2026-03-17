@@ -1,12 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { ArrowLeft, MapPin, Layers, Clock, Radio } from "lucide-react";
+import { ArrowLeft, MapPin, Layers, Clock, Radio, Bug } from "lucide-react";
 
 import { usePlayback } from "@/hooks/use-playback";
 import { usePreloader, PRELOAD_PLAY_THRESHOLD } from "@/hooks/use-preloader";
 import { TimelineBar } from "@/components/timeline-bar";
+import { nearestTs } from "@/lib/utils";
 import type { SceneInfo } from "@/lib/types";
 
 const LidarViewer = dynamic(
@@ -50,6 +52,7 @@ export function PlaybackClient({ scene }: Props) {
   const timestamps = scene.lidar_timestamps;
   const playback   = usePlayback({ totalFrames: timestamps.length });
   const { progress, cache } = usePreloader(scene);
+  const [showDebug, setShowDebug] = useState(false);
 
   const currentTs  = timestamps[playback.frameIndex] ?? 0;
   const lidarFrame = cache.lidar.get(currentTs) ?? null;
@@ -144,6 +147,83 @@ export function PlaybackClient({ scene }: Props) {
         <div className="absolute bottom-2 right-2 text-[10px] text-white/30 pointer-events-none">
           drag to orbit · scroll to zoom · right-drag to pan
         </div>
+
+        {/* Debug toggle button */}
+        <button
+          onClick={() => setShowDebug(d => !d)}
+          className="absolute top-2 right-2 p-1.5 rounded bg-black/60 text-white/40 hover:text-white/80 transition-colors"
+          title="Toggle debug panel"
+        >
+          <Bug className="w-3.5 h-3.5" />
+        </button>
+
+        {/* Debug panel */}
+        {showDebug && (
+          <div className="absolute top-8 right-2 w-80 bg-black/90 border border-white/10 rounded-lg p-3 text-[11px] font-mono text-white/70 space-y-2 max-h-[70vh] overflow-y-auto">
+            <p className="text-white/90 font-bold text-xs">Preload diagnostics</p>
+
+            <div className="space-y-0.5">
+              <p className="text-white/50">Progress: {progress.loaded}/{progress.total} ({Math.round(progress.loaded/Math.max(progress.total,1)*100)}%)</p>
+              <p className="text-white/50">Ready frames: {progress.readyFrames}</p>
+              <p className="text-white/50">Done: {progress.done ? "yes" : "no"}</p>
+            </div>
+
+            <div>
+              <p className="text-white/50 mb-1">Cameras detected ({progress.cameras.length}):</p>
+              {progress.cameras.length === 0
+                ? <p className="text-red-400">⚠ No cameras found in scene metadata</p>
+                : progress.cameras.map(cam => (
+                  <div key={cam} className="flex justify-between">
+                    <span className="text-white/60">{cam}</span>
+                    <span className={progress.cameraCounts[cam] > 0 ? "text-green-400" : "text-red-400"}>
+                      {progress.cameraCounts[cam] ?? 0} / {timestamps.length}
+                    </span>
+                  </div>
+                ))
+              }
+            </div>
+
+            <div>
+              <p className="text-white/50 mb-1">LiDAR cached: {cache.lidar.size} / {timestamps.length}</p>
+              <p className="text-white/50">Camera ts keys in scene:</p>
+              {Object.entries(scene.camera_timestamps).map(([cam, ts]) => (
+                <div key={cam} className="flex justify-between">
+                  <span className="text-white/50 truncate max-w-[180px]">{cam}</span>
+                  <span className="text-white/40">{ts.length} frames</span>
+                </div>
+              ))}
+            </div>
+
+            {progress.errors.length > 0 && (
+              <div>
+                <p className="text-red-400 mb-1">Errors ({progress.errors.length}):</p>
+                {progress.errors.slice(0, 10).map((e, i) => (
+                  <div key={i} className="text-red-300/80 break-all mb-1">
+                    <span className="text-red-400">[{e.status ?? "err"}]</span> {e.url.split("/").slice(-3).join("/")}
+                    <br /><span className="text-red-300/50">{e.message}</span>
+                  </div>
+                ))}
+                {progress.errors.length > 10 && (
+                  <p className="text-red-400/50">…and {progress.errors.length - 10} more</p>
+                )}
+              </div>
+            )}
+
+            <div className="border-t border-white/10 pt-2">
+              <p className="text-white/50 mb-1">Test URL (open in new tab):</p>
+              {timestamps[0] && progress.cameras[0] && (
+                <a
+                  href={`/api/scenes/${scene.log_id}/camera/${progress.cameras[0]}/${nearestTs(scene.camera_timestamps[progress.cameras[0]] ?? [], timestamps[0])}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-blue-400 hover:underline break-all"
+                >
+                  /api/scenes/…/camera/{progress.cameras[0]}/…
+                </a>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Camera strip — all cameras in one row ──────────────────────────── */}

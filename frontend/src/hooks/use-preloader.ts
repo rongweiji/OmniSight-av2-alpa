@@ -11,12 +11,23 @@ export interface CacheData {
   cameras: Map<number, Map<string, string>>;
 }
 
+export interface PreloadError {
+  url: string;
+  status?: number;
+  message: string;
+}
+
 export interface PreloadProgress {
   loaded: number;
   total: number;
   /** Frames where both LiDAR and all cameras are cached */
   readyFrames: number;
   done: boolean;
+  errors: PreloadError[];
+  /** cameras detected for this scene */
+  cameras: string[];
+  /** how many images loaded per camera */
+  cameraCounts: Record<string, number>;
 }
 
 /** Minimum ready frames before the viewer is unlocked */
@@ -32,6 +43,7 @@ export const PRELOAD_PLAY_THRESHOLD = 5;
 export function usePreloader(scene: SceneInfo) {
   const [progress, setProgress] = useState<PreloadProgress>({
     loaded: 0, total: 0, readyFrames: 0, done: false,
+    errors: [], cameras: [], cameraCounts: {},
   });
 
   const cacheRef = useRef<CacheData>({
@@ -54,32 +66,54 @@ export function usePreloader(scene: SceneInfo) {
     const lidarTs  = scene.lidar_timestamps;
     const cameras  = scene.camera_names.filter(c => scene.camera_timestamps[c]?.length);
 
+    console.log(`[preloader] scene=${scene.log_id}`);
+    console.log(`[preloader] lidar frames: ${lidarTs.length}`);
+    console.log(`[preloader] cameras (${cameras.length}):`, cameras);
+    console.log(`[preloader] camera_timestamps keys:`, Object.keys(scene.camera_timestamps));
+
     // total steps: 1 lidar/ann fetch per frame + 1 image fetch per (frame × camera)
     const total = lidarTs.length + lidarTs.length * cameras.length;
     let loaded = 0;
     let readyFrames = 0;
+    const errors: PreloadError[] = [];
+    const cameraCounts: Record<string, number> = {};
+    cameras.forEach(c => { cameraCounts[c] = 0; });
 
-    setProgress({ loaded: 0, total, readyFrames: 0, done: false });
+    setProgress({
+      loaded: 0, total, readyFrames: 0, done: false,
+      errors: [], cameras, cameraCounts: { ...cameraCounts },
+    });
 
     function inc() {
       loaded++;
       setProgress(p => ({ ...p, loaded }));
     }
 
+    function addError(err: PreloadError) {
+      errors.push(err);
+      console.error(`[preloader] FAIL ${err.status ?? "?"} ${err.url} — ${err.message}`);
+      setProgress(p => ({ ...p, errors: [...errors] }));
+    }
+
     async function loadDataFrame(ts: number) {
+      const lidarUrl = `/api/scenes/${scene.log_id}/lidar/${ts}`;
       try {
         const [lidarRes, annsRes] = await Promise.all([
-          fetch(`/api/scenes/${scene.log_id}/lidar/${ts}`, { signal }),
+          fetch(lidarUrl, { signal }),
           fetch(`/api/scenes/${scene.log_id}/annotations/${ts}`, { signal }),
         ]);
-        if (lidarRes.ok) cacheRef.current.lidar.set(ts, await lidarRes.json());
+        if (lidarRes.ok) {
+          cacheRef.current.lidar.set(ts, await lidarRes.json());
+        } else {
+          addError({ url: lidarUrl, status: lidarRes.status, message: `HTTP ${lidarRes.status}` });
+        }
         if (annsRes.ok) {
           const data = await annsRes.json();
           cacheRef.current.annotations.set(ts, data.annotations ?? []);
         }
       } catch (e) {
         if (signal.aborted) return;
-        console.warn(`LiDAR/ann fetch failed ts=${ts}:`, e);
+        addError({ url: lidarUrl, message: String(e) });
       }
       inc();
     }
@@ -87,22 +121,24 @@ export function usePreloader(scene: SceneInfo) {
     async function loadCameraImage(ts: number, cam: string) {
       const camTs   = scene.camera_timestamps[cam] ?? [];
       const nearest = nearestTs(camTs, ts);
+      const url     = `/api/scenes/${scene.log_id}/camera/${cam}/${nearest}`;
       try {
-        const res = await fetch(
-          `/api/scenes/${scene.log_id}/camera/${cam}/${nearest}`,
-          { signal },
-        );
+        const res = await fetch(url, { signal });
         if (res.ok) {
           const blob = await res.blob();
-          const url  = URL.createObjectURL(blob);
-          blobUrls.current.push(url);
+          const blobUrl = URL.createObjectURL(blob);
+          blobUrls.current.push(blobUrl);
           if (!cacheRef.current.cameras.has(ts))
             cacheRef.current.cameras.set(ts, new Map());
-          cacheRef.current.cameras.get(ts)!.set(cam, url);
+          cacheRef.current.cameras.get(ts)!.set(cam, blobUrl);
+          cameraCounts[cam] = (cameraCounts[cam] ?? 0) + 1;
+          setProgress(p => ({ ...p, cameraCounts: { ...cameraCounts } }));
+        } else {
+          addError({ url, status: res.status, message: `HTTP ${res.status}` });
         }
       } catch (e) {
         if (signal.aborted) return;
-        console.warn(`Camera fetch failed ${cam}/${nearest}:`, e);
+        addError({ url, message: String(e) });
       }
       inc();
     }
