@@ -81,11 +81,11 @@ echo "  -> API running (PID $(cat $API_PID_FILE))  log: ~/omnisight-api.log"
 # Wait until API is ready (up to 15 s)
 echo "  -> Waiting for API to be ready..."
 for i in $(seq 1 15); do
-  curl -sf "http://localhost:${API_PORT}/health" > /dev/null 2>&1 && break
+  curl -sf "http://127.0.0.1:${API_PORT}/health" > /dev/null 2>&1 && break
   sleep 1
 done
 
-if ! curl -sf "http://localhost:${API_PORT}/health" > /dev/null 2>&1; then
+if ! curl -sf "http://127.0.0.1:${API_PORT}/health" > /dev/null 2>&1; then
   echo "  [ERROR] API did not start. Check ~/omnisight-api.log"
   exit 1
 fi
@@ -98,7 +98,7 @@ echo "[2/3] Building frontend..."
 cd "${REPO_DIR}/frontend"
 
 # Write .env.local so Next.js always has the API URL — more reliable than shell env prefix
-echo "API_URL=http://localhost:${API_PORT}" > .env.local
+echo "API_URL=http://127.0.0.1:${API_PORT}" > .env.local
 
 if [ ! -d "node_modules" ]; then
   echo "  -> Installing Node.js dependencies..."

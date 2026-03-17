@@ -6,7 +6,7 @@ import type { SceneListResponse, SceneInfo, LidarFrame, AnnotationsResponse } fr
 function base(): string {
   if (typeof window === "undefined") {
     // Server-side: call the Python API directly
-    return process.env.API_URL ?? "http://localhost:8080";
+    return process.env.API_URL ?? "http://127.0.0.1:8080";
   }
   // Client-side: relative URL, proxied by Next.js rewrites
   return "";
