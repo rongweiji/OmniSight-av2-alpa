@@ -1,6 +1,10 @@
-# OmniSight — AV2 Scene Explanation with Alpamayo-R1-10B
+# OmniSight — AV2 Scene Viewer with Alpamayo-R1-10B Trajectory Inference
 
-OmniSight loads [Argoverse 2](https://argoverse.github.io/user-guide/datasets/sensor.html) sensor scenes (LiDAR + cameras + 3D annotations) and uses [nvidia/Alpamayo-R1-10B](https://huggingface.co/nvidia/Alpamayo-R1-10B) to generate natural language explanations of autonomous driving scenarios.
+OmniSight loads [Argoverse 2](https://argoverse.github.io/user-guide/datasets/sensor.html) sensor scenes (LiDAR + ring cameras + 3D annotations) and runs [nvidia/Alpamayo-R1-10B](https://huggingface.co/nvidia/Alpamayo-R1-10B) to predict future trajectories and Chain-of-Causation driving reasoning, visualised in a real-time 3D web viewer.
+
+## Demo
+
+[![OmniSight Demo](https://vumbnail.com/1174572929.jpg)](https://vimeo.com/1174572929)
 
 ## Features
 
