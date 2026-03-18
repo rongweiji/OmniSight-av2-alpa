@@ -1,19 +1,36 @@
 # OmniSight — AV2 Scene Viewer with Alpamayo-R1-10B Trajectory Inference
 
-OmniSight loads [Argoverse 2](https://argoverse.github.io/user-guide/datasets/sensor.html) sensor scenes (LiDAR + ring cameras + 3D annotations) and runs [nvidia/Alpamayo-R1-10B](https://huggingface.co/nvidia/Alpamayo-R1-10B) to predict future trajectories and Chain-of-Causation driving reasoning, visualised in a real-time 3D web viewer.
+OmniSight loads [Argoverse 2](https://argoverse.github.io/user-guide/datasets/sensor.html) sensor scenes (LiDAR + 7 ring cameras + 3D annotations) and runs [nvidia/Alpamayo-R1-10B](https://huggingface.co/nvidia/Alpamayo-R1-10B) on an **NVIDIA DGX Spark (GB10 Grace Blackwell)** to predict 6.4-second future trajectories with Chain-of-Causation driving reasoning — all visualised in a real-time 3D web viewer.
 
 ## Demo
 
 [![OmniSight Demo](https://vumbnail.com/1174572929.jpg)](https://vimeo.com/1174572929)
 
+## Performance on NVIDIA DGX Spark (GB10)
+
+Measured on Dell Pro Max with GB10 Grace Blackwell (CUDA 13.0, 128 GB unified memory):
+
+| Metric | Value |
+|---|---|
+| Model size | 10B parameters (22 GB bfloat16) |
+| Model load time | ~2 min (first run, PTX JIT for sm_121) |
+| Model load time (cached) | ~2 s |
+| Trajectory inference | **3.8 s / frame** |
+| Scene description (VLM) | **+4 s / frame** |
+| GPU memory allocated | 22.2 GB |
+| Trajectory horizon | 64 waypoints × 0.1s = **6.4 seconds** |
+| Input | 4 cameras × 4 frames + 16-step ego history |
+| Output | 64 (x,y,z) waypoints + CoC reasoning text |
+
 ## Features
 
-- Load any AV2 scene (LiDAR sweeps, ring cameras, 3D object annotations)
-- **Web data viewer** — camera gallery, bird's-eye-view LiDAR, annotation stats
-- Four explanation tasks: **scene summary**, **object behavior**, **lidar analysis**, **custom Q&A**
-- Streaming and batch inference modes
-- One-command DGX deployment via `deploy_dgx.sh`
-- OpenAI-compatible API — drop-in replacement for other LLM clients
+- **Real-time 3D viewer** — interactive LiDAR point cloud with orbit/zoom/pan
+- **7 ring cameras** — full surround view, preloaded for smooth playback
+- **3D annotation boxes** — per-category color-coded bounding boxes
+- **Trajectory overlay** — predicted 6.4s path rendered as green→red gradient in 3D
+- **AI inference panel** — Chain-of-Causation decision + rich scene description per frame
+- **Batch inference** — process all scenes once, results served instantly by the API
+- **Auto-play + loop** — demo-ready, starts playing automatically
 
 ## Project Structure
 

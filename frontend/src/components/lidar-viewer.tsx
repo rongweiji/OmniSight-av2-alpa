@@ -121,7 +121,7 @@ function TrajectoryPath({ waypoints }: { waypoints: Waypoint[] }) {
           <bufferAttribute attach="attributes-position" args={[dotPositions, 3]} />
           <bufferAttribute attach="attributes-color"    args={[dotColors, 3]} />
         </bufferGeometry>
-        <pointsMaterial size={0.35} vertexColors sizeAttenuation />
+        <pointsMaterial size={0.55} vertexColors sizeAttenuation />
       </points>
 
       {/* Arrow at the final waypoint pointing forward */}

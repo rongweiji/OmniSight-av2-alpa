@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { ArrowLeft, MapPin, Layers, Clock, Radio, Bug, Brain, ChevronRight } from "lucide-react";
+import { ArrowLeft, MapPin, Layers, Clock, Radio, Bug, Brain, ChevronRight, Cpu, Zap, Route } from "lucide-react";
 
 import { usePlayback } from "@/hooks/use-playback";
 import { usePreloader, PRELOAD_PLAY_THRESHOLD } from "@/hooks/use-preloader";
@@ -73,6 +73,18 @@ export function PlaybackClient({ scene }: Props) {
     api.inference(scene.log_id).then(r => setInferenceResults(r.results)).catch(() => {});
   }, [scene.log_id]);
 
+  // Auto-play once enough frames are ready
+  useEffect(() => {
+    if (canPlay && !playback.playing) playback.play();
+  }, [canPlay]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Loop: restart when playback reaches the end
+  useEffect(() => {
+    if (!playback.playing && canPlay && playback.frameIndex >= timestamps.length - 1) {
+      setTimeout(() => { playback.seek(0); playback.play(); }, 1500);
+    }
+  }, [playback.playing]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Find the inference result nearest to current timestamp
   const activeResult: InferenceResult | null = inferenceResults.length === 0 ? null : (() => {
     const tsList = inferenceResults.map(r => r.current_ts);
@@ -133,7 +145,11 @@ export function PlaybackClient({ scene }: Props) {
           {scene.log_id}
         </code>
 
-        <div className="ml-auto flex items-center gap-4 text-xs text-muted-foreground">
+        <div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
+          {/* Hardware badge */}
+          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-500/10 border border-green-500/20 text-green-400 text-[10px] font-mono font-medium">
+            <Cpu className="w-3 h-3" />NVIDIA GB10
+          </span>
           <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{scene.city_name}</span>
           <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{scene.duration_s}s</span>
           <span className="flex items-center gap-1"><Layers className="w-3 h-3" />{scene.n_annotations} obj</span>
@@ -325,17 +341,15 @@ export function PlaybackClient({ scene }: Props) {
             </div>
 
             {inferenceResults.length === 0 ? (
-              /* Empty state */
               <div className="flex-1 flex flex-col items-center justify-center gap-3 p-4 text-center">
                 <Brain className="w-8 h-8 text-white/10" />
                 <p className="text-xs text-white/30">No inference results yet</p>
                 <p className="text-[10px] text-white/20 font-mono leading-relaxed">
-                  Run av2_alpamayo_inference.py<br/>to generate results
+                  Run av2_alpamayo_batch.py<br/>to generate results
                 </p>
               </div>
             ) : (
-              /* Results list */
-              <div className="flex-1 overflow-y-auto space-y-0 py-1">
+              <div className="flex-1 overflow-y-auto py-1">
                 {inferenceResults.map((r) => {
                   const isActive = activeResult?.current_ts === r.current_ts;
                   const tsMs = Math.round(r.current_ts / 1e6);
@@ -344,61 +358,73 @@ export function PlaybackClient({ scene }: Props) {
                     <div
                       key={r.current_ts}
                       ref={isActive ? activeResultRef : null}
-                      className={`mx-1.5 my-1 rounded-lg border transition-all duration-200
+                      className={`mx-2 my-1.5 rounded-xl border transition-all duration-300
                         ${isActive
-                          ? "border-violet-500/50 bg-violet-500/10"
-                          : "border-white/5 bg-white/[0.02] hover:bg-white/5"
+                          ? "border-violet-500/60 bg-gradient-to-b from-violet-500/15 to-violet-500/5 shadow-lg shadow-violet-500/10"
+                          : "border-white/5 bg-white/[0.02] hover:bg-white/[0.04]"
                         }`}
                     >
-                      {/* Timestamp row */}
-                      <div className="flex items-center gap-1.5 px-2.5 pt-2 pb-1">
-                        {isActive && <ChevronRight className="w-3 h-3 text-violet-400 shrink-0" />}
-                        <span className={`text-[10px] font-mono tabular-nums ${isActive ? "text-violet-300" : "text-white/40"}`}>
-                          t={tsMs.toLocaleString()} ms
+                      {/* Header row */}
+                      <div className="flex items-center gap-1.5 px-3 pt-2.5 pb-1">
+                        {isActive
+                          ? <Zap className="w-3 h-3 text-violet-400 shrink-0" />
+                          : <ChevronRight className="w-3 h-3 text-white/20 shrink-0" />
+                        }
+                        <span className={`text-[10px] font-mono tabular-nums ${isActive ? "text-violet-300" : "text-white/35"}`}>
+                          {tsMs.toLocaleString()} ms
                         </span>
-                        {isActive && (
-                          <span className="ml-auto text-[9px] bg-violet-500/30 text-violet-300 px-1.5 py-0.5 rounded-full">
-                            now
+                        {isActive && r.metrics && (
+                          <span className="ml-auto flex items-center gap-1 text-[9px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded-full font-mono">
+                            <Zap className="w-2.5 h-2.5" />{r.metrics.inference_s.toFixed(2)}s
                           </span>
                         )}
                       </div>
 
-                      {/* Scene description (rich VLM output, if available) */}
+                      {/* Trajectory quick-stats bar (always visible when active) */}
+                      {isActive && r.metrics && (
+                        <div className="mx-3 mb-2 grid grid-cols-3 gap-1">
+                          <div className="flex flex-col items-center bg-black/40 rounded-lg py-1.5">
+                            <Route className="w-3 h-3 text-violet-400 mb-0.5" />
+                            <span className="text-white text-[11px] font-bold">{r.metrics.total_path_m.toFixed(0)}m</span>
+                            <span className="text-white/30 text-[8px]">path</span>
+                          </div>
+                          <div className="flex flex-col items-center bg-black/40 rounded-lg py-1.5">
+                            <Zap className="w-3 h-3 text-yellow-400 mb-0.5" />
+                            <span className="text-white text-[11px] font-bold">{(r.metrics.peak_speed_ms * 3.6).toFixed(0)}</span>
+                            <span className="text-white/30 text-[8px]">km/h</span>
+                          </div>
+                          <div className="flex flex-col items-center bg-black/40 rounded-lg py-1.5">
+                            <Cpu className="w-3 h-3 text-green-400 mb-0.5" />
+                            <span className="text-white text-[11px] font-bold">{r.metrics.inference_s.toFixed(1)}s</span>
+                            <span className="text-white/30 text-[8px]">infer</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Scene description */}
                       {r.scene_description && (
-                        <div className="px-2.5 pb-1">
-                          <p className={`text-[9px] font-medium uppercase tracking-wide mb-0.5
-                            ${isActive ? "text-violet-400/70" : "text-white/20"}`}>
-                            Scene
+                        <div className="px-3 pb-1.5">
+                          <p className={`text-[9px] font-semibold uppercase tracking-widest mb-1
+                            ${isActive ? "text-violet-400" : "text-white/15"}`}>
+                            Scene Analysis
                           </p>
-                          <p className={`text-[10px] leading-relaxed ${isActive ? "text-white/75" : "text-white/35"}`}>
+                          <p className={`text-[10px] leading-relaxed ${isActive ? "text-white/80" : "text-white/30"}`}>
                             {r.scene_description}
                           </p>
                         </div>
                       )}
 
-                      {/* Chain-of-Causation */}
-                      <div className="px-2.5 pb-1.5">
-                        <p className={`text-[9px] font-medium uppercase tracking-wide mb-0.5
-                          ${isActive ? "text-violet-400/70" : "text-white/20"}`}>
-                          Decision
+                      {/* CoC decision */}
+                      <div className="px-3 pb-3">
+                        <p className={`text-[9px] font-semibold uppercase tracking-widest mb-1
+                          ${isActive ? "text-amber-400" : "text-white/15"}`}>
+                          AI Decision
                         </p>
-                        <p className={`text-[10px] leading-relaxed ${isActive ? "text-white/80" : "text-white/40"}`}>
-                          {r.cot}
+                        <p className={`text-[10px] leading-relaxed italic
+                          ${isActive ? "text-amber-100/90" : "text-white/35"}`}>
+                          "{r.cot}"
                         </p>
                       </div>
-
-                      {/* Trajectory stats */}
-                      {r.metrics && (
-                        <div className={`mx-2.5 mb-2 px-2 py-1.5 rounded bg-black/30 grid grid-cols-2 gap-x-3 gap-y-0.5
-                          text-[9px] font-mono ${isActive ? "text-white/60" : "text-white/25"}`}>
-                          <span>path</span>
-                          <span className={isActive ? "text-white/80" : ""}>{r.metrics.total_path_m.toFixed(1)} m</span>
-                          <span>speed</span>
-                          <span className={isActive ? "text-white/80" : ""}>{(r.metrics.peak_speed_ms * 3.6).toFixed(1)} km/h</span>
-                          <span>infer</span>
-                          <span className={isActive ? "text-white/80" : ""}>{r.metrics.inference_s.toFixed(2)} s</span>
-                        </div>
-                      )}
                     </div>
                   );
                 })}
