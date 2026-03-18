@@ -209,34 +209,51 @@ def infer_frame(model, processor, frame_data: dict,
     total_dist  = sum(seg_dists)
     peak_speed  = max(seg_dists, default=0.0) / 0.1
 
-    # Optional scene description
+    # Optional scene description — use the VLM backbone inside AlpamayoR1
     scene_description = None
     if with_description:
-        desc_messages = [
-            {
-                "role": "user",
-                "content": [{"type": "image", "image": f} for f in frames_tensor]
-                + [{"type": "text", "text": DESCRIBE_PROMPT}],
-            }
-        ]
-        desc_inputs = processor.apply_chat_template(
-            desc_messages, tokenize=True, add_generation_prompt=True,
-            return_dict=True, return_tensors="pt",
-        )
-        input_len = desc_inputs["input_ids"].shape[1]
-        desc_inputs_cuda = {k: v.to("cuda") if hasattr(v, "to") else v
-                            for k, v in desc_inputs.items()}
-        with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16):
-            out_ids = model.generate(
-                **desc_inputs_cuda,
-                max_new_tokens=512,
-                do_sample=True,
-                temperature=0.7,
-                top_p=0.9,
-            )
-        scene_description = processor.tokenizer.decode(
-            out_ids[0][input_len:], skip_special_tokens=True
-        ).strip()
+        # AlpamayoR1 wraps a VLM; find whichever sub-module has generate()
+        gen_model = None
+        for attr in ["vlm", "language_model", "model", "transformer", "base_model"]:
+            candidate = getattr(model, attr, None)
+            if candidate is not None and hasattr(candidate, "generate"):
+                gen_model = candidate
+                break
+        # Also check the model itself as a last resort
+        if gen_model is None and hasattr(model, "generate"):
+            gen_model = model
+
+        if gen_model is None:
+            print("    [warn] Could not find generate() — skipping scene description")
+        else:
+            try:
+                desc_messages = [
+                    {
+                        "role": "user",
+                        "content": [{"type": "image", "image": f} for f in frames_tensor]
+                        + [{"type": "text", "text": DESCRIBE_PROMPT}],
+                    }
+                ]
+                desc_inputs = processor.apply_chat_template(
+                    desc_messages, tokenize=True, add_generation_prompt=True,
+                    return_dict=True, return_tensors="pt",
+                )
+                input_len = desc_inputs["input_ids"].shape[1]
+                desc_inputs_cuda = {k: v.to("cuda") if hasattr(v, "to") else v
+                                    for k, v in desc_inputs.items()}
+                with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16):
+                    out_ids = gen_model.generate(
+                        **desc_inputs_cuda,
+                        max_new_tokens=512,
+                        do_sample=True,
+                        temperature=0.7,
+                        top_p=0.9,
+                    )
+                scene_description = processor.tokenizer.decode(
+                    out_ids[0][input_len:], skip_special_tokens=True
+                ).strip()
+            except Exception as e:
+                print(f"    [warn] Scene description failed: {e}")
 
     return {
         "current_ts":        frame_data["current_ts"],

@@ -225,11 +225,22 @@ def describe_scene(model, processor, frames_tensor: "torch.Tensor") -> str:
         return_tensors="pt",
     )
     input_ids = inputs["input_ids"].to("cuda")
-    # move all tensor values to cuda
     inputs_cuda = {k: v.to("cuda") if hasattr(v, "to") else v for k, v in inputs.items()}
 
+    # AlpamayoR1 wraps a VLM — find whichever sub-module has generate()
+    gen_model = None
+    for attr in ["vlm", "language_model", "model", "transformer", "base_model"]:
+        candidate = getattr(model, attr, None)
+        if candidate is not None and hasattr(candidate, "generate"):
+            gen_model = candidate
+            break
+    if gen_model is None and hasattr(model, "generate"):
+        gen_model = model
+    if gen_model is None:
+        return "[scene description unavailable — generate() not found on model]"
+
     with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16):
-        out_ids = model.generate(
+        out_ids = gen_model.generate(
             **inputs_cuda,
             max_new_tokens=512,
             do_sample=True,
@@ -237,7 +248,6 @@ def describe_scene(model, processor, frames_tensor: "torch.Tensor") -> str:
             top_p=0.9,
         )
 
-    # Decode only the newly generated tokens
     new_tokens = out_ids[0][input_ids.shape[1]:]
     return processor.tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
 
